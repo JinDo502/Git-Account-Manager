@@ -50,15 +50,21 @@ export async function switchAccount(accountName?: string): Promise<void> {
     // 更新Git配置
     await setGitConfig(account);
 
-    // 更新远程URL
-    await updateRemoteUrl(account, repoInfo);
-
-    // 如果是新初始化的仓库，询问是否要在GitHub上创建远程仓库
+    // 如果是新初始化的仓库，询问是否要创建为私有仓库
+    let isPrivate = true;
     if (shouldInit) {
-      const shouldCreateRemote = await confirm('是否要在GitHub上创建远程仓库?', true);
-      if (shouldCreateRemote) {
-        const isPrivate = await confirm('是否将新仓库设置为私有?', true);
-        await createAndPushRepo(account, repoInfo.name, isPrivate);
+      isPrivate = await confirm('是否将新仓库设置为私有?', true);
+    }
+
+    // 更新远程URL（如果需要会创建远程仓库）
+    await updateRemoteUrl(account, repoInfo, true, isPrivate);
+
+    // 如果是新初始化的仓库，询问是否要创建初始提交并推送
+    if (shouldInit) {
+      const shouldCreateCommit = await confirm('是否要创建初始提交并推送到远程仓库?', true);
+      if (shouldCreateCommit) {
+        await createInitialCommit();
+        await pushToRemote();
       }
     }
 
@@ -70,18 +76,9 @@ export async function switchAccount(accountName?: string): Promise<void> {
 }
 
 /**
- * 创建远程仓库并推送代码
- * @param account GitHub账号信息
- * @param repoName 仓库名称
- * @param isPrivate 是否为私有仓库
+ * 创建初始提交
  */
-async function createAndPushRepo(account: any, repoName: string, isPrivate: boolean): Promise<void> {
-  const { createGitHubRepo, pushToRemote } = await import('../utils/git');
-
-  // 创建远程仓库
-  await createGitHubRepo(account, repoName, isPrivate);
-
-  // 创建初始提交
+async function createInitialCommit(): Promise<void> {
   const execa = (await import('execa')).default;
 
   try {
@@ -102,10 +99,15 @@ async function createAndPushRepo(account: any, repoName: string, isPrivate: bool
         await execa('git', ['commit', '--allow-empty', '-m', '初始提交']);
       }
     }
-
-    // 推送到远程
-    await pushToRemote();
   } catch (error) {
     console.error(chalk.red('创建初始提交失败:'), error);
   }
+}
+
+/**
+ * 推送到远程仓库
+ */
+async function pushToRemote(): Promise<void> {
+  const { pushToRemote: pushToRemoteUtil } = await import('../utils/git');
+  await pushToRemoteUtil();
 }

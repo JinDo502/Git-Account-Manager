@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { getAccount } from '../utils/config';
-import { getCurrentRepoInfo, setGitConfig, checkRepoExists, createGitHubRepo, updateRemoteUrl, pushToRemote, deleteGitHubRepo } from '../utils/git';
+import { getCurrentRepoInfo, setGitConfig, checkRepoExists, updateRemoteUrl, pushToRemote, deleteGitHubRepo } from '../utils/git';
 import { selectAccount, confirm, confirmDangerousAction, input } from '../utils/interactive';
 
 interface MigrateOptions {
@@ -87,15 +87,11 @@ export async function migrateRepo(sourceAccountName?: string, targetAccountName?
     // 更新Git配置为目标账号
     await setGitConfig(targetAccount);
 
-    // 在目标账号中创建仓库（如果不存在）
-    if (!targetRepoExists) {
-      // 询问是否为私有仓库
-      const isPrivate = await confirm('是否将新仓库设置为私有?', true);
-      await createGitHubRepo(targetAccount, repoInfo.name, isPrivate);
-    }
+    // 询问是否为私有仓库
+    const isPrivate = await confirm('是否将仓库设置为私有?', true);
 
-    // 更新远程URL为目标账号
-    await updateRemoteUrl(targetAccount, repoInfo);
+    // 更新远程URL为目标账号（如果需要会创建远程仓库）
+    await updateRemoteUrl(targetAccount, repoInfo, true, isPrivate);
 
     // 如果是新初始化的仓库，创建并推送初始提交
     if (shouldInit) {

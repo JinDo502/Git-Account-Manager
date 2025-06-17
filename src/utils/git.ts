@@ -163,14 +163,59 @@ export async function setGitConfig(account: GitHubAccount, scope: 'global' | 'lo
 }
 
 /**
+ * 检查SSH连接是否可用
+ * @param sshHost SSH主机名
+ * @returns 是否可用
+ */
+export async function checkSshConnection(sshHost: string): Promise<boolean> {
+  try {
+    console.log(chalk.blue(`正在测试SSH连接: ${sshHost}...`));
+    await execa('ssh', ['-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no', `git@${sshHost}`], {
+      reject: false,
+      timeout: 5000,
+    });
+    return true;
+  } catch (error) {
+    console.error(chalk.yellow(`SSH连接测试失败: ${sshHost}`), error);
+    return false;
+  }
+}
+
+/**
  * 更新远程URL
  * @param account GitHub账号信息
  * @param repoInfo 仓库信息
+ * @param createIfNotExists 如果仓库不存在是否创建
+ * @param isPrivate 如果需要创建，是否为私有仓库
  */
-export async function updateRemoteUrl(account: GitHubAccount, repoInfo: RepoInfo): Promise<void> {
+export async function updateRemoteUrl(account: GitHubAccount, repoInfo: RepoInfo, createIfNotExists: boolean = true, isPrivate: boolean = true): Promise<void> {
   try {
-    // 构建新的SSH URL，使用账号的SSH别名
-    const newSshUrl = `git@${account.sshHostAlias}:${account.githubUsername}/${repoInfo.name}.git`;
+    // 检查SSH连接是否可用
+    const sshConnected = await checkSshConnection(account.sshHostAlias);
+    if (!sshConnected) {
+      console.log(chalk.yellow(`警告: 无法连接到SSH主机 ${account.sshHostAlias}，将尝试使用标准的github.com主机名`));
+    }
+
+    // 更新仓库信息
+    repoInfo.owner = account.githubUsername;
+    repoInfo.fullName = `${account.githubUsername}/${repoInfo.name}`;
+
+    // 使用正确的SSH主机名
+    const sshHost = sshConnected ? account.sshHostAlias : 'github.com';
+    repoInfo.sshUrl = `git@${sshHost}:${account.githubUsername}/${repoInfo.name}.git`;
+    repoInfo.httpsUrl = `https://github.com/${repoInfo.fullName}.git`;
+
+    // 如果需要，检查远程仓库是否存在，不存在则创建
+    if (createIfNotExists) {
+      const repoExists = await checkRepoExists(account, repoInfo.name);
+      if (!repoExists) {
+        console.log(chalk.yellow(`远程仓库 "${repoInfo.fullName}" 不存在，正在创建...`));
+        await createGitHubRepo(account, repoInfo.name, isPrivate);
+      }
+    }
+
+    // 构建新的SSH URL
+    const newSshUrl = repoInfo.sshUrl;
 
     // 检查是否已有origin远程
     const hasOrigin = await checkRemoteExists('origin');
@@ -184,12 +229,6 @@ export async function updateRemoteUrl(account: GitHubAccount, repoInfo: RepoInfo
       await execa('git', ['remote', 'add', 'origin', newSshUrl]);
       console.log(chalk.green(`远程URL已添加: ${newSshUrl}`));
     }
-
-    // 更新仓库信息
-    repoInfo.owner = account.githubUsername;
-    repoInfo.fullName = `${account.githubUsername}/${repoInfo.name}`;
-    repoInfo.sshUrl = newSshUrl;
-    repoInfo.httpsUrl = `https://github.com/${repoInfo.fullName}.git`;
   } catch (error) {
     console.error(chalk.red('更新远程URL失败:'), error);
     process.exit(1);
@@ -219,11 +258,14 @@ export async function checkRemoteExists(remoteName: string): Promise<boolean> {
  */
 export async function checkRepoExists(account: GitHubAccount, repoName: string): Promise<boolean> {
   try {
-    // 使用gh CLI检查仓库是否存在，使用标准的github.com主机名
-    await execa('gh', ['repo', 'view', `${account.githubUsername}/${repoName}`, '--json', 'name'], {
-      env: { GH_HOST: 'github.com' },
-    });
-    return true;
+    // 使用curl直接检查仓库是否存在，而不是使用gh CLI
+    const { exitCode } = await execa(
+      'curl',
+      ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-H', 'Accept: application/vnd.github.v3+json', `https://api.github.com/repos/${account.githubUsername}/${repoName}`],
+      { reject: false }
+    );
+
+    return exitCode === 0;
   } catch (error) {
     return false;
   }
@@ -237,18 +279,64 @@ export async function checkRepoExists(account: GitHubAccount, repoName: string):
  */
 export async function createGitHubRepo(account: GitHubAccount, repoName: string, isPrivate: boolean = false): Promise<void> {
   try {
-    const args = ['repo', 'create', repoName];
-    if (isPrivate) args.push('--private');
-    else args.push('--public');
+    // 使用git命令创建仓库，而不是使用gh CLI
+    console.log(chalk.blue(`正在创建仓库: ${account.githubUsername}/${repoName}...`));
 
-    // 使用gh CLI创建仓库，使用标准的github.com主机名
-    await execa('gh', args, {
-      env: { GH_HOST: 'github.com' },
-    });
+    // 首先尝试使用SSH创建仓库
+    try {
+      await execa(
+        'git',
+        [
+          'init',
+          '--quiet',
+          '&&',
+          'git',
+          'add',
+          '.',
+          '&&',
+          'git',
+          'commit',
+          '--allow-empty',
+          '-m',
+          '"Initial commit"',
+          '&&',
+          'git',
+          'remote',
+          'add',
+          'origin',
+          `git@${account.sshHostAlias}:${account.githubUsername}/${repoName}.git`,
+          '&&',
+          'git',
+          'push',
+          '-u',
+          'origin',
+          'master',
+        ],
+        { shell: true }
+      );
+
+      console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
+      return;
+    } catch (error) {
+      console.log(chalk.yellow('使用SSH创建仓库失败，尝试使用HTTPS方法...'));
+    }
+
+    // 如果SSH方法失败，使用GitHub API创建仓库
+    const visibility = isPrivate ? 'private' : 'public';
+    const { stdout } = await execa('curl', [
+      '-X',
+      'POST',
+      '-H',
+      'Accept: application/vnd.github.v3+json',
+      '-d',
+      `{"name":"${repoName}","private":${isPrivate}}`,
+      'https://api.github.com/user/repos',
+    ]);
 
     console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
   } catch (error) {
     console.error(chalk.red('创建GitHub仓库失败:'), error);
+    console.log(chalk.yellow('请尝试手动创建仓库，然后再次运行此命令'));
     process.exit(1);
   }
 }
@@ -260,10 +348,8 @@ export async function createGitHubRepo(account: GitHubAccount, repoName: string,
  */
 export async function deleteGitHubRepo(account: GitHubAccount, repoName: string): Promise<void> {
   try {
-    // 使用gh CLI删除仓库，使用标准的github.com主机名
-    await execa('gh', ['repo', 'delete', `${account.githubUsername}/${repoName}`, '--yes'], {
-      env: { GH_HOST: 'github.com' },
-    });
+    // 使用curl删除仓库，而不是使用gh CLI
+    await execa('curl', ['-X', 'DELETE', '-H', 'Accept: application/vnd.github.v3+json', `https://api.github.com/repos/${account.githubUsername}/${repoName}`]);
 
     console.log(chalk.green(`仓库已删除: ${account.githubUsername}/${repoName}`));
   } catch (error) {

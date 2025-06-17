@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { switchAccount } from './commands/switchAccount';
 import { migrateRepo } from './commands/migrateRepo';
+import { initRepo } from './commands/initRepo';
 import { initConfig } from './utils/config';
 import chalk from 'chalk';
 import fs from 'fs-extra';
@@ -29,6 +30,9 @@ program
   .argument('[targetAccount]', '目标GitHub账号')
   .option('-d, --delete-source', '迁移后删除源仓库', false)
   .action(migrateRepo);
+
+// 初始化仓库命令
+program.command('init').description('初始化Git仓库并配置GitHub远程仓库').argument('[account]', '要使用的GitHub账号').action(initRepo);
 
 // 解析命令行参数
 program.parse(process.argv);
