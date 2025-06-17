@@ -1,0 +1,27 @@
+{
+  "name": "gh-manager",
+  "version": "1.0.0",
+  "description": "A CLI tool to manage multiple GitHub accounts and repositories.",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "bin": {
+    "gh-manager": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x.x",
+    "@types/inquirer": "^8.x.x",
+    "@types/fs-extra": "^11.x.x",
+    "typescript": "^5.x.x"
+  },
+  "dependencies": {
+    "commander": "^12.x.x",
+    "execa": "^5.x.x",
+    "fs-extra": "^11.x.x",
+    "inquirer": "^8.x.x",
+    "chalk": "^4.x.x"
+  }
+}
