@@ -258,12 +258,9 @@ export async function checkRemoteExists(remoteName: string): Promise<boolean> {
  */
 export async function checkRepoExists(account: GitHubAccount, repoName: string): Promise<boolean> {
   try {
-    // 使用curl直接检查仓库是否存在，而不是使用gh CLI
-    const { exitCode } = await execa(
-      'curl',
-      ['-s', '-o', '/dev/null', '-w', '%{http_code}', '-H', 'Accept: application/vnd.github.v3+json', `https://api.github.com/repos/${account.githubUsername}/${repoName}`],
-      { reject: false }
-    );
+    // 使用SSH方式检查仓库是否存在
+    const sshUrl = `git@${account.sshHostAlias}:${account.githubUsername}/${repoName}.git`;
+    const { exitCode } = await execa('git', ['ls-remote', '--exit-code', sshUrl, 'HEAD'], { reject: false });
 
     return exitCode === 0;
   } catch (error) {
@@ -279,61 +276,39 @@ export async function checkRepoExists(account: GitHubAccount, repoName: string):
  */
 export async function createGitHubRepo(account: GitHubAccount, repoName: string, isPrivate: boolean = false): Promise<void> {
   try {
-    // 使用git命令创建仓库，而不是使用gh CLI
     console.log(chalk.blue(`正在创建仓库: ${account.githubUsername}/${repoName}...`));
 
-    // 首先尝试使用SSH创建仓库
+    // 使用GitHub CLI创建仓库（需要安装并配置GitHub CLI）
     try {
-      await execa(
-        'git',
-        [
-          'init',
-          '--quiet',
-          '&&',
-          'git',
-          'add',
-          '.',
-          '&&',
-          'git',
-          'commit',
-          '--allow-empty',
-          '-m',
-          '"Initial commit"',
-          '&&',
-          'git',
-          'remote',
-          'add',
-          'origin',
-          `git@${account.sshHostAlias}:${account.githubUsername}/${repoName}.git`,
-          '&&',
-          'git',
-          'push',
-          '-u',
-          'origin',
-          'master',
-        ],
-        { shell: true }
-      );
-
+      const visibility = isPrivate ? 'private' : 'public';
+      await execa('gh', ['repo', 'create', `${account.githubUsername}/${repoName}`, `--${visibility}`]);
       console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
       return;
-    } catch (error) {
-      console.log(chalk.yellow('使用SSH创建仓库失败，尝试使用HTTPS方法...'));
+    } catch (ghError) {
+      console.log(chalk.yellow('使用GitHub CLI创建仓库失败，请确保已安装并配置GitHub CLI。'));
+      console.log(chalk.yellow('正在尝试手动创建仓库...'));
     }
 
-    // 如果SSH方法失败，使用GitHub API创建仓库
-    const visibility = isPrivate ? 'private' : 'public';
-    const { stdout } = await execa('curl', [
-      '-X',
-      'POST',
-      '-H',
-      'Accept: application/vnd.github.v3+json',
-      '-d',
-      `{"name":"${repoName}","private":${isPrivate}}`,
-      'https://api.github.com/user/repos',
+    // 如果GitHub CLI不可用，则提示用户手动创建仓库
+    console.log(chalk.yellow(`请手动在GitHub上创建仓库: ${account.githubUsername}/${repoName}`));
+    console.log(chalk.yellow(`创建后，请运行以下命令设置远程仓库:`));
+    console.log(chalk.blue(`git remote add origin git@${account.sshHostAlias}:${account.githubUsername}/${repoName}.git`));
+
+    // 等待用户确认已创建仓库
+    const inquirer = (await import('inquirer')).default;
+    const { confirmed } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirmed',
+        message: '是否已手动创建仓库?',
+        default: false,
+      },
     ]);
 
-    console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
+    if (!confirmed) {
+      console.log(chalk.yellow('操作已取消'));
+      process.exit(0);
+    }
   } catch (error) {
     console.error(chalk.red('创建GitHub仓库失败:'), error);
     console.log(chalk.yellow('请尝试手动创建仓库，然后再次运行此命令'));
@@ -348,12 +323,12 @@ export async function createGitHubRepo(account: GitHubAccount, repoName: string,
  */
 export async function deleteGitHubRepo(account: GitHubAccount, repoName: string): Promise<void> {
   try {
-    // 使用curl删除仓库，而不是使用gh CLI
-    await execa('curl', ['-X', 'DELETE', '-H', 'Accept: application/vnd.github.v3+json', `https://api.github.com/repos/${account.githubUsername}/${repoName}`]);
-
+    // 使用GitHub CLI删除仓库
+    await execa('gh', ['repo', 'delete', `${account.githubUsername}/${repoName}`, '--yes']);
     console.log(chalk.green(`仓库已删除: ${account.githubUsername}/${repoName}`));
   } catch (error) {
     console.error(chalk.red('删除GitHub仓库失败:'), error);
+    console.log(chalk.yellow('请尝试手动删除仓库'));
     process.exit(1);
   }
 }
