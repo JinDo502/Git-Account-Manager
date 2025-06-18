@@ -6,7 +6,6 @@ import { migrateRepo } from './commands/migrateRepo';
 import { initRepo } from './commands/initRepo';
 import { configAccount } from './commands/configAccount';
 import { initConfig } from './utils/config';
-import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 

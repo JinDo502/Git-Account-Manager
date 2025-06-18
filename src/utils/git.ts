@@ -1,6 +1,5 @@
 import execa from 'execa';
 import path from 'path';
-import fs from 'fs-extra';
 import { GitHubAccount, RepoInfo } from '../types';
 import chalk from 'chalk';
 import axios from 'axios';
@@ -208,13 +207,54 @@ export async function checkSshConnection(sshHost: string): Promise<boolean> {
 }
 
 /**
+ * 设置当前分支的上游追踪分支
+ * @param remoteName 远程仓库名称
+ * @param defaultBranch 默认分支名称
+ */
+export async function setupUpstreamBranch(remoteName: string = 'origin', defaultBranch: string = 'main'): Promise<void> {
+  try {
+    // 获取当前分支名称
+    const { stdout: currentBranch } = await execa('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+
+    console.log(chalk.blue(`正在设置分支 "${currentBranch}" 的上游追踪...`));
+
+    try {
+      // 尝试设置上游追踪分支
+      await execa('git', ['branch', '--set-upstream-to', `${remoteName}/${currentBranch}`, currentBranch]);
+      console.log(chalk.green(`✅ 已设置分支 "${currentBranch}" 追踪 "${remoteName}/${currentBranch}"`));
+    } catch (error) {
+      // 如果远程分支不存在，提示用户使用push --set-upstream
+      console.log(chalk.yellow(`远程分支 "${remoteName}/${currentBranch}" 不存在，将在首次推送时创建`));
+      console.log(chalk.blue(`提示: 使用 'git push --set-upstream ${remoteName} ${currentBranch}' 推送并设置追踪`));
+
+      // 自动设置push.autoSetupRemote为true（Git 2.37+支持）
+      try {
+        await execa('git', ['config', '--local', 'push.autoSetupRemote', 'true']);
+        console.log(chalk.green('✅ 已启用自动设置远程追踪分支 (push.autoSetupRemote=true)'));
+      } catch (configError) {
+        // 某些旧版Git可能不支持此配置，忽略错误
+      }
+    }
+  } catch (error) {
+    console.error(chalk.red('设置上游追踪分支时出错:'), error);
+  }
+}
+
+/**
  * 更新远程URL
  * @param account GitHub账号信息
  * @param repoInfo 仓库信息
  * @param createIfNotExists 如果仓库不存在是否创建
  * @param isPrivate 如果需要创建，是否为私有仓库
+ * @param setupUpstream 是否自动设置上游追踪分支
  */
-export async function updateRemoteUrl(account: GitHubAccount, repoInfo: RepoInfo, createIfNotExists: boolean = true, isPrivate: boolean = true): Promise<void> {
+export async function updateRemoteUrl(
+  account: GitHubAccount,
+  repoInfo: RepoInfo,
+  createIfNotExists: boolean = true,
+  isPrivate: boolean = true,
+  setupUpstream: boolean = false
+): Promise<void> {
   try {
     // 检查SSH连接是否可用
     const sshConnected = await checkSshConnection(account.sshHostAlias);
@@ -255,8 +295,13 @@ export async function updateRemoteUrl(account: GitHubAccount, repoInfo: RepoInfo
       await execa('git', ['remote', 'add', 'origin', newSshUrl]);
       console.log(chalk.green(`远程URL已添加: ${newSshUrl}`));
     }
+
+    // 如果需要，设置上游追踪分支
+    if (setupUpstream) {
+      await setupUpstreamBranch('origin', 'main');
+    }
   } catch (error) {
-    console.error(chalk.red('更新远程URL失败:'), error);
+    console.error(chalk.red('更新远程URL时出错:'), error);
     process.exit(1);
   }
 }
@@ -495,69 +540,95 @@ async function deleteGitHubRepoManually(account: GitHubAccount, repoName: string
 }
 
 /**
- * 推送所有代码到远程仓库
+ * 推送到远程仓库
  * @param force 是否强制推送
  * @param defaultBranch 默认分支名称
  */
 export async function pushToRemote(force: boolean = false, defaultBranch?: string): Promise<void> {
   try {
-    // 获取当前分支名
-    let currentBranch;
+    // 获取当前分支
+    const { stdout: currentBranch } = await execa('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+    const branch = currentBranch || defaultBranch || 'main';
+
+    console.log(chalk.blue(`正在推送到远程仓库，分支: ${branch}...`));
+
+    // 检查是否已设置上游分支
+    const { exitCode } = await execa('git', ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`], { reject: false });
+    const hasUpstream = exitCode === 0;
+
     try {
-      const { stdout } = await execa('git', ['branch', '--show-current']);
-      currentBranch = stdout.trim();
-    } catch (error) {
-      // 如果获取失败，尝试使用默认分支或HEAD
-      currentBranch = '';
+      if (hasUpstream) {
+        // 已设置上游分支，直接推送
+        console.log(chalk.blue(`分支 "${branch}" 已有上游追踪，直接推送...`));
+        if (force) {
+          await execa('git', ['push', '--force']);
+        } else {
+          await execa('git', ['push']);
+        }
+      } else {
+        // 未设置上游分支，设置上游分支并推送
+        console.log(chalk.blue(`分支 "${branch}" 没有上游追踪，设置追踪并推送...`));
+        if (force) {
+          await execa('git', ['push', '--force', '--set-upstream', 'origin', branch]);
+        } else {
+          await execa('git', ['push', '--set-upstream', 'origin', branch]);
+        }
+        console.log(chalk.green(`✅ 已设置分支 "${branch}" 追踪 "origin/${branch}"`));
+      }
+
+      console.log(chalk.green('✅ 推送成功'));
+    } catch (pushError: any) {
+      console.error(chalk.red('推送到远程仓库失败:'));
+
+      // 提供更详细的错误诊断
+      if (pushError.stderr && pushError.stderr.includes('Repository not found')) {
+        console.error(chalk.red('远程仓库未找到。请确认:'));
+        console.error(chalk.yellow('1. 您已在GitHub上创建了该仓库'));
+        console.error(chalk.yellow('2. 您的SSH密钥已添加到正确的GitHub账号'));
+        console.error(chalk.yellow('3. 您的~/.ssh/config配置正确'));
+        console.error(chalk.yellow('4. 仓库名称拼写正确'));
+      } else if (pushError.stderr && pushError.stderr.includes('Permission denied')) {
+        console.error(chalk.red('权限被拒绝。请确认:'));
+        console.error(chalk.yellow('1. 您的SSH密钥已添加到正确的GitHub账号'));
+        console.error(chalk.yellow('2. 您对该仓库有写入权限'));
+      } else if (pushError.stderr && pushError.stderr.includes('refusing to update checked out branch')) {
+        console.error(chalk.red('无法推送到当前检出的分支。请尝试:'));
+        console.error(chalk.yellow('1. 在GitHub上手动创建一个初始提交'));
+        console.error(chalk.yellow('2. 然后运行 git pull origin main --allow-unrelated-histories'));
+        console.error(chalk.yellow('3. 然后再次尝试推送'));
+      } else if (pushError.stderr && pushError.stderr.includes('Updates were rejected')) {
+        console.error(chalk.red('推送被拒绝。可能的原因:'));
+        console.error(chalk.yellow('1. 远程分支已经存在且历史不同'));
+        console.error(chalk.yellow('2. 尝试添加 --force 参数强制推送'));
+        console.error(chalk.yellow('3. 或者先执行 git pull --rebase 再推送'));
+      } else {
+        console.error(chalk.red('错误详情:'), pushError.stderr || pushError.message);
+      }
+
+      // 尝试自动修复常见问题
+      if (pushError.stderr && pushError.stderr.includes('fatal: The current branch') && pushError.stderr.includes('has no upstream branch')) {
+        console.log(chalk.blue('正在尝试自动修复上游分支问题...'));
+        try {
+          await execa('git', ['push', '--set-upstream', 'origin', branch]);
+          console.log(chalk.green(`✅ 已自动修复并设置分支 "${branch}" 追踪 "origin/${branch}"`));
+          console.log(chalk.green('✅ 推送成功'));
+          return;
+        } catch (fixError) {
+          console.error(chalk.red('自动修复失败，请手动执行:'));
+          console.error(chalk.yellow(`git push --set-upstream origin ${branch}`));
+        }
+      }
+
+      // 提供推荐的解决方案
+      console.log(chalk.blue('推荐解决方案:'));
+      console.log(chalk.yellow(`1. 确认远程仓库已创建: https://github.com/用户名/仓库名`));
+      console.log(chalk.yellow(`2. 手动设置上游分支: git push --set-upstream origin ${branch}`));
+      console.log(chalk.yellow('3. 如果远程分支已存在且有冲突: git pull --rebase origin ' + branch));
+
+      process.exit(1);
     }
-
-    // 如果没有当前分支（可能是新仓库），使用默认分支或HEAD
-    const branchToUse = currentBranch || defaultBranch || 'HEAD';
-
-    // 构建推送命令
-    const args = ['push', '--set-upstream', 'origin'];
-
-    // 如果使用HEAD，不需要指定源和目标分支
-    if (branchToUse === 'HEAD') {
-      args.push('HEAD');
-    } else {
-      // 否则使用 本地分支:远程分支 格式
-      args.push(`${branchToUse}:${branchToUse}`);
-    }
-
-    if (force) args.push('--force');
-
-    console.log(chalk.blue(`正在推送代码到远程仓库 (分支: ${branchToUse})...`));
-    await execa('git', args);
-    console.log(chalk.green(`代码已成功推送到远程仓库 (分支: ${branchToUse})`));
-  } catch (error: any) {
-    console.error(chalk.red('推送代码失败:'));
-
-    // 提供更详细的错误诊断
-    if (error.stderr && error.stderr.includes('Repository not found')) {
-      console.error(chalk.red('远程仓库未找到。请确认:'));
-      console.error(chalk.yellow('1. 您已在GitHub上创建了该仓库'));
-      console.error(chalk.yellow('2. 您的SSH密钥已添加到正确的GitHub账号'));
-      console.error(chalk.yellow('3. 您的~/.ssh/config配置正确'));
-      console.error(chalk.yellow('4. 仓库名称拼写正确'));
-    } else if (error.stderr && error.stderr.includes('Permission denied')) {
-      console.error(chalk.red('权限被拒绝。请确认:'));
-      console.error(chalk.yellow('1. 您的SSH密钥已添加到正确的GitHub账号'));
-      console.error(chalk.yellow('2. 您对该仓库有写入权限'));
-    } else if (error.stderr && error.stderr.includes('refusing to update checked out branch')) {
-      console.error(chalk.red('无法推送到当前检出的分支。请尝试:'));
-      console.error(chalk.yellow('1. 在GitHub上手动创建一个初始提交'));
-      console.error(chalk.yellow('2. 然后运行 git pull origin main --allow-unrelated-histories'));
-      console.error(chalk.yellow('3. 然后再次尝试推送'));
-    } else if (error.stderr && error.stderr.includes('Updates were rejected')) {
-      console.error(chalk.red('推送被拒绝。可能的原因:'));
-      console.error(chalk.yellow('1. 远程分支已经存在且历史不同'));
-      console.error(chalk.yellow('2. 尝试添加 --force 参数强制推送'));
-      console.error(chalk.yellow('3. 或者先执行 git pull --rebase 再推送'));
-    } else {
-      console.error(error);
-    }
-
+  } catch (error) {
+    console.error(chalk.red('获取分支信息时出错:'), error);
     process.exit(1);
   }
 }

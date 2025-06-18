@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getAccount, updateAccount, readConfig } from '../utils/config';
+import { getAccount, updateAccount } from '../utils/config';
 import { selectAccount } from '../utils/interactive';
 
 /**

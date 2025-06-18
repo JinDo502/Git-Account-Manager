@@ -62,12 +62,10 @@ export async function switchAccount(accountName?: string): Promise<void> {
       process.exit(1);
     }
 
-    // 如果是新初始化的仓库，询问是否要自定义仓库名称
-    if (shouldInit) {
-      const customRepoName = await input('输入仓库名称 (留空使用当前目录名):', repoInfo.name);
-      if (customRepoName && customRepoName !== repoInfo.name) {
-        repoInfo.name = customRepoName;
-      }
+    // 询问用户输入仓库名称（无论是否为初始化仓库）
+    const customRepoName = await input('输入仓库名称 (留空使用当前目录名):', repoInfo.name);
+    if (customRepoName && customRepoName !== repoInfo.name) {
+      repoInfo.name = customRepoName;
     }
 
     console.log(chalk.blue(`正在将仓库 "${repoInfo.name}" 切换到账号 "${accountName}" (${account.githubUsername})...`));
@@ -75,21 +73,46 @@ export async function switchAccount(accountName?: string): Promise<void> {
     // 更新Git配置
     await setGitConfig(account);
 
-    // 如果是新初始化的仓库，询问是否要创建为私有仓库
-    let isPrivate = true;
-    if (shouldInit) {
-      isPrivate = await confirm('是否将新仓库设置为私有?', true);
-    }
+    // 询问是否创建远程仓库
+    const shouldCreateRemote = await confirm('是否创建/更新远程仓库?', true);
 
-    // 更新远程URL（如果需要会创建远程仓库）
-    await updateRemoteUrl(account, repoInfo, true, isPrivate);
+    if (shouldCreateRemote) {
+      // 如果需要创建远程仓库，询问是否要创建为私有仓库
+      let isPrivate = true;
 
-    // 如果是新初始化的仓库，询问是否要创建初始提交并推送
-    if (shouldInit) {
-      const shouldCreateCommit = await confirm('是否要创建初始提交并推送到远程仓库?', true);
-      if (shouldCreateCommit) {
-        await createInitialCommit();
-        await pushToRemote(false, 'main'); // 使用main作为默认分支
+      // 无论是否为初始化仓库，都询问是否设置为公开仓库
+      isPrivate = !(await confirm('是否将仓库设置为公开(Public)仓库? 选择"否"则创建为私有(Private)仓库', false));
+
+      // 更新远程URL（如果需要会创建远程仓库）
+      // 不自动设置上游追踪分支，稍后单独询问
+      await updateRemoteUrl(account, repoInfo, true, isPrivate, false);
+
+      // 询问是否设置上游追踪分支
+      const shouldSetupUpstream = await confirm('是否设置上游追踪分支?', true);
+
+      if (shouldSetupUpstream) {
+        const { setupUpstreamBranch } = await import('../utils/git');
+        await setupUpstreamBranch('origin', 'main');
+      }
+
+      // 如果是新初始化的仓库，询问是否要创建初始提交并推送
+      if (shouldInit) {
+        const shouldCreateCommit = await confirm('是否要创建初始提交?', true);
+        if (shouldCreateCommit) {
+          await createInitialCommit();
+
+          // 询问是否推送到远程仓库
+          const shouldPush = await confirm('是否推送到远程仓库?', true);
+          if (shouldPush) {
+            await pushToRemote(false, 'main');
+          }
+        }
+      } else {
+        // 如果不是新初始化的仓库，询问是否推送现有代码
+        const shouldPush = await confirm('是否推送现有代码到远程仓库?', false);
+        if (shouldPush) {
+          await pushToRemote(false, 'main');
+        }
       }
     }
 

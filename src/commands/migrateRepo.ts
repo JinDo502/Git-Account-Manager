@@ -137,19 +137,38 @@ export async function migrateRepo(sourceAccountName?: string, targetAccountName?
     // 更新Git配置为目标账号
     await setGitConfig(targetAccount);
 
-    // 询问是否为私有仓库
-    const isPrivate = await confirm('是否将仓库设置为私有?', true);
+    // 询问是否需要创建远程仓库（如果不是新初始化的仓库，且目标仓库不存在）
+    const shouldCreateRemote = shouldInit || !targetRepoExists;
 
-    // 更新远程URL为目标账号（如果需要会创建远程仓库）
-    await updateRemoteUrl(targetAccount, repoInfo, true, isPrivate);
+    // 如果需要创建远程仓库，询问是否设为私有
+    let isPrivate = true;
+    if (shouldCreateRemote) {
+      isPrivate = !(await confirm('是否将仓库设置为公开(Public)仓库? 选择"否"则创建为私有(Private)仓库', false));
+    }
 
-    // 如果是新初始化的仓库，创建并推送初始提交
+    // 更新远程URL（如果需要会创建远程仓库）
+    // 不自动设置上游追踪分支，稍后单独询问
+    await updateRemoteUrl(targetAccount, repoInfo, true, isPrivate, false);
+
+    // 询问是否设置上游追踪分支
+    const shouldSetupUpstream = await confirm('是否设置上游追踪分支?', true);
+
+    if (shouldSetupUpstream) {
+      const { setupUpstreamBranch } = await import('../utils/git');
+      await setupUpstreamBranch('origin', 'main');
+    }
+
+    // 如果是新初始化的仓库，创建初始提交
     if (shouldInit) {
       await createInitialCommit();
     }
 
-    // 推送所有代码到目标仓库
-    await pushToRemote(true, 'main');
+    // 询问是否推送代码到目标仓库
+    const shouldPush = await confirm('是否推送代码到目标仓库?', true);
+    if (shouldPush) {
+      // 推送所有代码到目标仓库
+      await pushToRemote(true, 'main');
+    }
 
     console.log(chalk.green(`✅ 仓库已成功迁移到账号 "${targetAccountName}" (${targetAccount.githubUsername})`));
 
