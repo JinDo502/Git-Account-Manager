@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { getAccount, updateAccount } from '../utils/config';
-import { getCurrentRepoInfo, setGitConfig, updateRemoteUrl } from '../utils/git';
+import { getCurrentRepoInfo, setGitConfig, updateRemoteUrl, createInitialCommit, pushToRemote } from '../utils/git';
 import { selectAccount, confirm, input } from '../utils/interactive';
 
 /**
@@ -89,7 +89,7 @@ export async function switchAccount(accountName?: string): Promise<void> {
       const shouldCreateCommit = await confirm('是否要创建初始提交并推送到远程仓库?', true);
       if (shouldCreateCommit) {
         await createInitialCommit();
-        await pushToRemote();
+        await pushToRemote(false, 'main'); // 使用main作为默认分支
       }
     }
 
@@ -98,41 +98,4 @@ export async function switchAccount(accountName?: string): Promise<void> {
     console.error(chalk.red('切换账号时出错:'), error);
     process.exit(1);
   }
-}
-
-/**
- * 创建初始提交
- */
-async function createInitialCommit(): Promise<void> {
-  const execa = (await import('execa')).default;
-
-  try {
-    // 检查是否有文件可提交
-    const { stdout: status } = await execa('git', ['status', '--porcelain']);
-
-    if (status.trim()) {
-      // 有未提交的文件，询问是否添加并提交
-      const shouldCommit = await confirm('检测到未提交的文件，是否添加并提交?', true);
-      if (shouldCommit) {
-        await execa('git', ['add', '.']);
-        await execa('git', ['commit', '-m', '初始提交']);
-      }
-    } else {
-      // 没有未提交的文件，创建空提交
-      const shouldCreateEmptyCommit = await confirm('没有文件可提交，是否创建空提交?', true);
-      if (shouldCreateEmptyCommit) {
-        await execa('git', ['commit', '--allow-empty', '-m', '初始提交']);
-      }
-    }
-  } catch (error) {
-    console.error(chalk.red('创建初始提交失败:'), error);
-  }
-}
-
-/**
- * 推送到远程仓库
- */
-async function pushToRemote(): Promise<void> {
-  const { pushToRemote: pushToRemoteUtil } = await import('../utils/git');
-  await pushToRemoteUtil(false, 'main'); // 使用main作为默认分支
 }

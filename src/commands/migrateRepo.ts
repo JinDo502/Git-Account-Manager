@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { getAccount, updateAccount } from '../utils/config';
-import { getCurrentRepoInfo, setGitConfig, checkRepoExists, updateRemoteUrl, pushToRemote, deleteGitHubRepo } from '../utils/git';
+import { getCurrentRepoInfo, setGitConfig, checkRepoExists, updateRemoteUrl, pushToRemote, deleteGitHubRepo, createInitialCommit } from '../utils/git';
 import { selectAccount, confirm, confirmDangerousAction, input } from '../utils/interactive';
 
 interface MigrateOptions {
@@ -167,34 +167,5 @@ export async function migrateRepo(sourceAccountName?: string, targetAccountName?
   } catch (error) {
     console.error(chalk.red('迁移仓库时出错:'), error);
     process.exit(1);
-  }
-}
-
-/**
- * 创建初始提交
- */
-async function createInitialCommit(): Promise<void> {
-  const execa = (await import('execa')).default;
-
-  try {
-    // 检查是否有文件可提交
-    const { stdout: status } = await execa('git', ['status', '--porcelain']);
-
-    if (status.trim()) {
-      // 有未提交的文件，询问是否添加并提交
-      const shouldCommit = await confirm('检测到未提交的文件，是否添加并提交?', true);
-      if (shouldCommit) {
-        await execa('git', ['add', '.']);
-        await execa('git', ['commit', '-m', '初始提交']);
-      }
-    } else {
-      // 没有未提交的文件，创建空提交
-      const shouldCreateEmptyCommit = await confirm('没有文件可提交，是否创建空提交?', true);
-      if (shouldCreateEmptyCommit) {
-        await execa('git', ['commit', '--allow-empty', '-m', '初始提交']);
-      }
-    }
-  } catch (error) {
-    console.error(chalk.red('创建初始提交失败:'), error);
   }
 }

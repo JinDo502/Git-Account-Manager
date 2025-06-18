@@ -4,6 +4,7 @@ import fs from 'fs-extra';
 import { GitHubAccount, RepoInfo } from '../types';
 import chalk from 'chalk';
 import axios from 'axios';
+import { confirm } from './interactive';
 
 /**
  * 检查当前目录是否是Git仓库
@@ -338,82 +339,88 @@ export async function createGitHubRepo(account: GitHubAccount, repoName: string,
         if (response.status === 201) {
           console.log(chalk.green(`✅ 仓库创建成功: ${account.githubUsername}/${repoName}`));
           return;
-        } else {
-          console.log(chalk.yellow(`API返回意外状态码: ${response.status}`));
-          console.log(chalk.yellow('将回退到手动创建方式'));
         }
       } catch (apiError: any) {
         console.log(chalk.yellow(`使用GitHub API创建仓库失败: ${apiError.message}`));
-        if (apiError.response && apiError.response.data) {
+        if (apiError.response?.data) {
           console.log(chalk.yellow('错误详情:'), apiError.response.data);
         }
-        console.log(chalk.yellow('将回退到手动创建方式'));
       }
     }
 
     // 如果没有令牌或API创建失败，回退到手动创建方式
-    console.log(chalk.blue(`仓库 "${account.githubUsername}/${repoName}" 需要手动创建`));
-
-    // 提示用户手动创建仓库
-    console.log(chalk.yellow('请按照以下步骤手动创建GitHub仓库:'));
-    console.log(chalk.yellow('1. 登录到 https://github.com/new'));
-    console.log(chalk.yellow(`2. 仓库名称输入: ${repoName}`));
-    console.log(chalk.yellow(`3. 仓库可见性选择: ${isPrivate ? '私有 (Private)' : '公开 (Public)'}`));
-    console.log(chalk.yellow('4. 不要初始化仓库 (不要添加README, .gitignore或许可证)'));
-    console.log(chalk.yellow('5. 点击"创建仓库"按钮'));
-
-    let repoVerified = false;
-    let retryCount = 0;
-    const maxRetries = 3;
-
-    while (!repoVerified && retryCount < maxRetries) {
-      // 等待用户确认已创建仓库
-      const inquirer = (await import('inquirer')).default;
-      const { confirmed } = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'confirmed',
-          message: '是否已完成创建仓库?',
-          default: false,
-        },
-      ]);
-
-      if (!confirmed) {
-        console.log(chalk.yellow('操作已取消'));
-        process.exit(0);
-      }
-
-      // 验证仓库是否真的存在
-      console.log(chalk.blue('正在验证仓库是否已创建...'));
-      repoVerified = await checkRepoExists(account, repoName);
-
-      if (repoVerified) {
-        console.log(chalk.green(`✅ 仓库验证成功: ${account.githubUsername}/${repoName}`));
-      } else {
-        retryCount++;
-        if (retryCount < maxRetries) {
-          console.log(chalk.red(`❌ 仓库验证失败，无法访问 ${account.githubUsername}/${repoName}`));
-          console.log(chalk.yellow('可能的原因:'));
-          console.log(chalk.yellow('1. 仓库尚未创建完成，GitHub需要一点时间'));
-          console.log(chalk.yellow('2. 仓库名称与您输入的不一致'));
-          console.log(chalk.yellow('3. SSH配置问题'));
-          console.log(chalk.yellow(`请再次确认仓库已创建 (尝试 ${retryCount}/${maxRetries})`));
-        } else {
-          console.error(chalk.red(`❌ 多次验证失败，无法访问仓库。请手动检查以下内容:`));
-          console.error(chalk.yellow('1. 确认仓库已在GitHub上成功创建'));
-          console.error(chalk.yellow(`2. 确认SSH配置正确，可以通过运行 'ssh -T git@${account.sshHostAlias}' 测试`));
-          console.error(chalk.yellow(`3. 确认您的SSH密钥已添加到GitHub账号 ${account.githubUsername}`));
-          console.error(chalk.yellow('4. 确认仓库名称拼写正确'));
-          process.exit(1);
-        }
-      }
-    }
-
-    console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
+    await createGitHubRepoManually(account, repoName, isPrivate);
   } catch (error) {
     console.error(chalk.red('创建GitHub仓库过程中出错:'), error);
     process.exit(1);
   }
+}
+
+/**
+ * 手动创建GitHub仓库
+ * @param account GitHub账号信息
+ * @param repoName 仓库名称
+ * @param isPrivate 是否为私有仓库
+ */
+async function createGitHubRepoManually(account: GitHubAccount, repoName: string, isPrivate: boolean): Promise<void> {
+  console.log(chalk.blue(`仓库 "${account.githubUsername}/${repoName}" 需要手动创建`));
+
+  // 提示用户手动创建仓库
+  console.log(chalk.yellow('请按照以下步骤手动创建GitHub仓库:'));
+  console.log(chalk.yellow('1. 登录到 https://github.com/new'));
+  console.log(chalk.yellow(`2. 仓库名称输入: ${repoName}`));
+  console.log(chalk.yellow(`3. 仓库可见性选择: ${isPrivate ? '私有 (Private)' : '公开 (Public)'}`));
+  console.log(chalk.yellow('4. 不要初始化仓库 (不要添加README, .gitignore或许可证)'));
+  console.log(chalk.yellow('5. 点击"创建仓库"按钮'));
+
+  let repoVerified = false;
+  let retryCount = 0;
+  const maxRetries = 3;
+
+  while (!repoVerified && retryCount < maxRetries) {
+    // 等待用户确认已创建仓库
+    const inquirer = (await import('inquirer')).default;
+    const { confirmed } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirmed',
+        message: '是否已完成创建仓库?',
+        default: false,
+      },
+    ]);
+
+    if (!confirmed) {
+      console.log(chalk.yellow('操作已取消'));
+      process.exit(0);
+    }
+
+    // 验证仓库是否真的存在
+    console.log(chalk.blue('正在验证仓库是否已创建...'));
+    repoVerified = await checkRepoExists(account, repoName);
+
+    if (repoVerified) {
+      console.log(chalk.green(`✅ 仓库验证成功: ${account.githubUsername}/${repoName}`));
+    } else {
+      retryCount++;
+      if (retryCount < maxRetries) {
+        console.log(chalk.red(`❌ 仓库验证失败，无法访问 ${account.githubUsername}/${repoName}`));
+        console.log(chalk.yellow('可能的原因:'));
+        console.log(chalk.yellow('1. 仓库尚未创建完成，GitHub需要一点时间'));
+        console.log(chalk.yellow('2. 仓库名称与您输入的不一致'));
+        console.log(chalk.yellow('3. SSH配置问题'));
+        console.log(chalk.yellow(`请再次确认仓库已创建 (尝试 ${retryCount}/${maxRetries})`));
+      } else {
+        console.error(chalk.red(`❌ 多次验证失败，无法访问仓库。请手动检查以下内容:`));
+        console.error(chalk.yellow('1. 确认仓库已在GitHub上成功创建'));
+        console.error(chalk.yellow(`2. 确认SSH配置正确，可以通过运行 'ssh -T git@${account.sshHostAlias}' 测试`));
+        console.error(chalk.yellow(`3. 确认您的SSH密钥已添加到GitHub账号 ${account.githubUsername}`));
+        console.error(chalk.yellow('4. 确认仓库名称拼写正确'));
+        process.exit(1);
+      }
+    }
+  }
+
+  console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
 }
 
 /**
@@ -438,49 +445,53 @@ export async function deleteGitHubRepo(account: GitHubAccount, repoName: string)
         if (response.status === 204) {
           console.log(chalk.green(`✅ 仓库删除成功: ${account.githubUsername}/${repoName}`));
           return;
-        } else {
-          console.log(chalk.yellow(`API返回意外状态码: ${response.status}`));
-          console.log(chalk.yellow('将回退到手动删除方式'));
         }
       } catch (apiError: any) {
         console.log(chalk.yellow(`使用GitHub API删除仓库失败: ${apiError.message}`));
-        if (apiError.response && apiError.response.data) {
+        if (apiError.response?.data) {
           console.log(chalk.yellow('错误详情:'), apiError.response.data);
         }
-        console.log(chalk.yellow('将回退到手动删除方式'));
       }
     }
 
     // 如果没有令牌或API删除失败，回退到手动删除方式
-    // 提示用户手动删除仓库
-    console.log(chalk.yellow('请按照以下步骤手动删除GitHub仓库:'));
-    console.log(chalk.yellow(`1. 访问 https://github.com/${account.githubUsername}/${repoName}/settings`));
-    console.log(chalk.yellow('2. 滚动到页面底部的 "Danger Zone" 区域'));
-    console.log(chalk.yellow('3. 点击 "Delete this repository" 按钮'));
-    console.log(chalk.yellow(`4. 输入 "${account.githubUsername}/${repoName}" 进行确认`));
-    console.log(chalk.yellow('5. 点击确认删除按钮'));
-
-    // 等待用户确认已删除仓库
-    const inquirer = (await import('inquirer')).default;
-    const { confirmed } = await inquirer.prompt([
-      {
-        type: 'confirm',
-        name: 'confirmed',
-        message: '是否已完成删除仓库?',
-        default: false,
-      },
-    ]);
-
-    if (!confirmed) {
-      console.log(chalk.yellow('操作已取消'));
-      process.exit(0);
-    }
-
-    console.log(chalk.green(`仓库已删除: ${account.githubUsername}/${repoName}`));
+    await deleteGitHubRepoManually(account, repoName);
   } catch (error) {
     console.error(chalk.red('删除GitHub仓库过程中出错:'), error);
     process.exit(1);
   }
+}
+
+/**
+ * 手动删除GitHub仓库
+ * @param account GitHub账号信息
+ * @param repoName 仓库名称
+ */
+async function deleteGitHubRepoManually(account: GitHubAccount, repoName: string): Promise<void> {
+  console.log(chalk.yellow('请按照以下步骤手动删除GitHub仓库:'));
+  console.log(chalk.yellow(`1. 访问 https://github.com/${account.githubUsername}/${repoName}/settings`));
+  console.log(chalk.yellow('2. 滚动到页面底部的 "Danger Zone" 区域'));
+  console.log(chalk.yellow('3. 点击 "Delete this repository" 按钮'));
+  console.log(chalk.yellow(`4. 输入 "${account.githubUsername}/${repoName}" 进行确认`));
+  console.log(chalk.yellow('5. 点击确认删除按钮'));
+
+  // 等待用户确认已删除仓库
+  const inquirer = (await import('inquirer')).default;
+  const { confirmed } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'confirmed',
+      message: '是否已完成删除仓库?',
+      default: false,
+    },
+  ]);
+
+  if (!confirmed) {
+    console.log(chalk.yellow('操作已取消'));
+    process.exit(0);
+  }
+
+  console.log(chalk.green(`仓库已删除: ${account.githubUsername}/${repoName}`));
 }
 
 /**
@@ -548,5 +559,32 @@ export async function pushToRemote(force: boolean = false, defaultBranch?: strin
     }
 
     process.exit(1);
+  }
+}
+
+/**
+ * 创建初始提交
+ */
+export async function createInitialCommit(): Promise<void> {
+  try {
+    // 检查是否有文件可提交
+    const { stdout: status } = await execa('git', ['status', '--porcelain']);
+
+    if (status.trim()) {
+      // 有未提交的文件，询问是否添加并提交
+      const shouldCommit = await confirm('检测到未提交的文件，是否添加并提交?', true);
+      if (shouldCommit) {
+        await execa('git', ['add', '.']);
+        await execa('git', ['commit', '-m', '初始提交']);
+      }
+    } else {
+      // 没有未提交的文件，创建空提交
+      const shouldCreateEmptyCommit = await confirm('没有文件可提交，是否创建空提交?', true);
+      if (shouldCreateEmptyCommit) {
+        await execa('git', ['commit', '--allow-empty', '-m', '初始提交']);
+      }
+    }
+  } catch (error) {
+    console.error(chalk.red('创建初始提交失败:'), error);
   }
 }

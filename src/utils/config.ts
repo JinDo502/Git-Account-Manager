@@ -15,17 +15,17 @@ const DEFAULT_CONFIG: Config = {
       gitUsername: 'Your Personal Name',
       gitEmail: 'your.personal.email@example.com',
       sshHostAlias: 'github.com-personal',
-      githubToken: '',
+      githubToken: 'your-personal-github-token',
     },
     work: {
       githubUsername: 'YourWorkGHUsername',
       gitUsername: 'Your Work Name',
       gitEmail: 'your.work.email@example.com',
       sshHostAlias: 'github.com-work',
-      githubToken: '',
+      githubToken: 'your-work-github-token',
     },
   },
-  defaultAccount: 'personal',
+  defaultAccount: 'work',
 };
 
 /**
