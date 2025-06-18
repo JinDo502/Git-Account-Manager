@@ -170,13 +170,37 @@ export async function setGitConfig(account: GitHubAccount, scope: 'global' | 'lo
 export async function checkSshConnection(sshHost: string): Promise<boolean> {
   try {
     console.log(chalk.blue(`正在测试SSH连接: ${sshHost}...`));
-    await execa('ssh', ['-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no', `git@${sshHost}`], {
+
+    // 使用-o StrictHostKeyChecking=no避免首次连接时的主机验证提示
+    // 使用-o IdentitiesOnly=yes确保只使用指定的身份文件
+    // 增加超时时间到10秒，给连接更多时间
+    const { exitCode, stderr } = await execa('ssh', ['-T', '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=no', '-o', 'IdentitiesOnly=yes', `git@${sshHost}`], {
       reject: false,
-      timeout: 5000,
+      timeout: 10000,
     });
-    return true;
-  } catch (error) {
-    console.error(chalk.yellow(`SSH连接测试失败: ${sshHost}`), error);
+
+    // GitHub的成功响应是"Hi username! You've successfully authenticated..."
+    // 即使身份验证成功，exitCode通常也是1（因为shell访问被拒绝）
+    if (stderr.includes('successfully authenticated') || exitCode === 1) {
+      console.log(chalk.green(`SSH连接成功: ${sshHost}`));
+      return true;
+    }
+
+    console.log(chalk.yellow(`SSH连接测试失败: ${sshHost}`));
+    console.log(chalk.yellow(`错误信息: ${stderr}`));
+    return false;
+  } catch (error: any) {
+    console.error(chalk.yellow(`SSH连接测试失败: ${sshHost}`));
+
+    // 提供更详细的错误信息
+    if (error.code === 'ENOENT') {
+      console.error(chalk.red('SSH命令不可用。请确保已安装SSH客户端。'));
+    } else if (error.code === 'ETIMEDOUT') {
+      console.error(chalk.red('SSH连接超时。请检查网络连接和SSH主机配置。'));
+    } else {
+      console.error(error);
+    }
+
     return false;
   }
 }
@@ -276,23 +300,15 @@ export async function checkRepoExists(account: GitHubAccount, repoName: string):
  */
 export async function createGitHubRepo(account: GitHubAccount, repoName: string, isPrivate: boolean = false): Promise<void> {
   try {
-    console.log(chalk.blue(`正在创建仓库: ${account.githubUsername}/${repoName}...`));
+    console.log(chalk.blue(`仓库 "${account.githubUsername}/${repoName}" 需要手动创建`));
 
-    // 使用GitHub CLI创建仓库（需要安装并配置GitHub CLI）
-    try {
-      const visibility = isPrivate ? 'private' : 'public';
-      await execa('gh', ['repo', 'create', `${account.githubUsername}/${repoName}`, `--${visibility}`]);
-      console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
-      return;
-    } catch (ghError) {
-      console.log(chalk.yellow('使用GitHub CLI创建仓库失败，请确保已安装并配置GitHub CLI。'));
-      console.log(chalk.yellow('正在尝试手动创建仓库...'));
-    }
-
-    // 如果GitHub CLI不可用，则提示用户手动创建仓库
-    console.log(chalk.yellow(`请手动在GitHub上创建仓库: ${account.githubUsername}/${repoName}`));
-    console.log(chalk.yellow(`创建后，请运行以下命令设置远程仓库:`));
-    console.log(chalk.blue(`git remote add origin git@${account.sshHostAlias}:${account.githubUsername}/${repoName}.git`));
+    // 提示用户手动创建仓库
+    console.log(chalk.yellow('请按照以下步骤手动创建GitHub仓库:'));
+    console.log(chalk.yellow('1. 登录到 https://github.com/new'));
+    console.log(chalk.yellow(`2. 仓库名称输入: ${repoName}`));
+    console.log(chalk.yellow(`3. 仓库可见性选择: ${isPrivate ? '私有 (Private)' : '公开 (Public)'}`));
+    console.log(chalk.yellow('4. 不要初始化仓库 (不要添加README, .gitignore或许可证)'));
+    console.log(chalk.yellow('5. 点击"创建仓库"按钮'));
 
     // 等待用户确认已创建仓库
     const inquirer = (await import('inquirer')).default;
@@ -300,7 +316,7 @@ export async function createGitHubRepo(account: GitHubAccount, repoName: string,
       {
         type: 'confirm',
         name: 'confirmed',
-        message: '是否已手动创建仓库?',
+        message: '是否已完成创建仓库?',
         default: false,
       },
     ]);
@@ -309,9 +325,10 @@ export async function createGitHubRepo(account: GitHubAccount, repoName: string,
       console.log(chalk.yellow('操作已取消'));
       process.exit(0);
     }
+
+    console.log(chalk.green(`仓库已创建: ${account.githubUsername}/${repoName}`));
   } catch (error) {
-    console.error(chalk.red('创建GitHub仓库失败:'), error);
-    console.log(chalk.yellow('请尝试手动创建仓库，然后再次运行此命令'));
+    console.error(chalk.red('创建GitHub仓库过程中出错:'), error);
     process.exit(1);
   }
 }
@@ -323,12 +340,33 @@ export async function createGitHubRepo(account: GitHubAccount, repoName: string,
  */
 export async function deleteGitHubRepo(account: GitHubAccount, repoName: string): Promise<void> {
   try {
-    // 使用GitHub CLI删除仓库
-    await execa('gh', ['repo', 'delete', `${account.githubUsername}/${repoName}`, '--yes']);
+    // 提示用户手动删除仓库
+    console.log(chalk.yellow('请按照以下步骤手动删除GitHub仓库:'));
+    console.log(chalk.yellow(`1. 访问 https://github.com/${account.githubUsername}/${repoName}/settings`));
+    console.log(chalk.yellow('2. 滚动到页面底部的 "Danger Zone" 区域'));
+    console.log(chalk.yellow('3. 点击 "Delete this repository" 按钮'));
+    console.log(chalk.yellow(`4. 输入 "${account.githubUsername}/${repoName}" 进行确认`));
+    console.log(chalk.yellow('5. 点击确认删除按钮'));
+
+    // 等待用户确认已删除仓库
+    const inquirer = (await import('inquirer')).default;
+    const { confirmed } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'confirmed',
+        message: '是否已完成删除仓库?',
+        default: false,
+      },
+    ]);
+
+    if (!confirmed) {
+      console.log(chalk.yellow('操作已取消'));
+      process.exit(0);
+    }
+
     console.log(chalk.green(`仓库已删除: ${account.githubUsername}/${repoName}`));
   } catch (error) {
-    console.error(chalk.red('删除GitHub仓库失败:'), error);
-    console.log(chalk.yellow('请尝试手动删除仓库'));
+    console.error(chalk.red('删除GitHub仓库过程中出错:'), error);
     process.exit(1);
   }
 }
@@ -342,10 +380,27 @@ export async function pushToRemote(force: boolean = false): Promise<void> {
     const args = ['push', '--set-upstream', 'origin', 'HEAD'];
     if (force) args.push('--force');
 
+    console.log(chalk.blue(`正在推送代码到远程仓库...`));
     await execa('git', args);
-    console.log(chalk.green('代码已推送到远程仓库'));
-  } catch (error) {
-    console.error(chalk.red('推送代码失败:'), error);
+    console.log(chalk.green('代码已成功推送到远程仓库'));
+  } catch (error: any) {
+    console.error(chalk.red('推送代码失败:'));
+
+    // 提供更详细的错误诊断
+    if (error.stderr && error.stderr.includes('Repository not found')) {
+      console.error(chalk.red('远程仓库未找到。请确认:'));
+      console.error(chalk.yellow('1. 您已在GitHub上创建了该仓库'));
+      console.error(chalk.yellow('2. 您的SSH密钥已添加到正确的GitHub账号'));
+      console.error(chalk.yellow('3. 您的~/.ssh/config配置正确'));
+      console.error(chalk.yellow('4. 仓库名称拼写正确'));
+    } else if (error.stderr && error.stderr.includes('Permission denied')) {
+      console.error(chalk.red('权限被拒绝。请确认:'));
+      console.error(chalk.yellow('1. 您的SSH密钥已添加到正确的GitHub账号'));
+      console.error(chalk.yellow('2. 您对该仓库有写入权限'));
+    } else {
+      console.error(error);
+    }
+
     process.exit(1);
   }
 }
