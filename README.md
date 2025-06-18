@@ -121,7 +121,7 @@ gh-manager config personal
 
 ### 账号管理
 
-管理 GitHub 账号，包括创建、删除、列出和设置默认账号：
+管理 GitHub 账号，包括创建、配置、删除和设置默认账号：
 
 ```bash
 # 交互式管理账号
@@ -133,7 +133,10 @@ gh-manager account --list
 # 创建新账号
 gh-manager account --create [账号名称]
 
-# 删除账号
+# 配置现有账号
+gh-manager account --config [账号名称]
+
+# 删除账号（会询问是否同时删除SSH配置和密钥）
 gh-manager account --delete 账号名称
 
 # 设置默认账号
@@ -147,20 +150,28 @@ gh-manager account --set-default 账号名称
 3. 自动更新 SSH 配置文件
 4. 显示公钥内容，方便添加到 GitHub 账号
 
-### 切换账号
+### 切换或迁移仓库
 
-将当前 Git 仓库切换到指定的 GitHub 账号：
+将当前 Git 仓库切换到指定的 GitHub 账号，或迁移到另一个账号：
 
 ```bash
-# 交互式选择账号
-gh-manager switch
+# 切换到指定账号
+gh-manager switch [账号名称]
 
-# 直接指定账号
-gh-manager switch personal
-gh-manager switch work
+# 迁移到指定账号
+gh-manager switch [目标账号名称] --migrate
+
+# 迁移后删除源仓库（需多次确认）
+gh-manager switch [目标账号名称] --migrate --delete-source
+
+# 指定仓库名称
+gh-manager switch [账号名称] --name my-repo-name
+
+# 创建公开仓库（默认为私有）
+gh-manager switch [账号名称] --no-private
 ```
 
-这将：
+切换账号时，工具会：
 
 1. 更新当前仓库的 Git 配置（用户名和邮箱）
 2. 询问是否自定义仓库名称（默认使用当前目录名）
@@ -170,24 +181,7 @@ gh-manager switch work
    - 是否创建初始提交并推送代码
 4. 更新远程 URL 以使用指定账号的 SSH 别名
 
-如果当前目录不是 Git 仓库，工具会询问是否要初始化仓库，并可选择在 GitHub 上创建远程仓库。
-
-### 迁移仓库
-
-将仓库从一个 GitHub 账号迁移到另一个：
-
-```bash
-# 交互式选择源账号和目标账号
-gh-manager migrate
-
-# 直接指定源账号和目标账号
-gh-manager migrate personal work
-
-# 迁移后删除源仓库（需多次确认）
-gh-manager migrate personal work --delete-source
-```
-
-这将：
+迁移仓库时，工具会：
 
 1. 询问是否自定义仓库名称（默认使用当前目录名）
 2. 在目标账号中创建同名仓库（如果不存在）
@@ -196,19 +190,6 @@ gh-manager migrate personal work --delete-source
 5. 询问是否设置上游追踪分支
 6. 推送所有代码到目标账号
 7. 可选：删除源账号中的仓库（需多次确认）
-
-如果当前目录不是 Git 仓库，工具会询问是否要初始化仓库，并在目标账号中创建远程仓库。
-
-### 在新项目中使用
-
-在任何目录中运行 `gh-manager switch` 或 `gh-manager migrate`，工具会检测到当前不是 Git 仓库，并提供以下选项：
-
-1. 初始化 Git 仓库
-2. 配置 Git 用户信息
-3. 创建远程 GitHub 仓库
-4. 创建初始提交并推送
-
-这使得从零开始创建新项目并关联到特定 GitHub 账号变得非常简单。
 
 ## 注意事项
 
