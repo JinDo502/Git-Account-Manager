@@ -4,11 +4,15 @@
 
 ## 功能特性
 
+- **账号管理**：支持创建、删除、配置任意数量的 GitHub 账号，并可设置默认账号。
+- **SSH 配置**：自动生成 SSH 密钥和更新 SSH 配置文件，简化多账号的 SSH 设置。
 - **账号切换**：快速将当前 Git 仓库的远程 URL 和 Git 用户信息切换到预配置的 GitHub 账号。
 - **仓库迁移**：将本地仓库从一个 GitHub 账号迁移到另一个，包括在新账号下创建远程仓库并推送所有代码。支持检测目标仓库是否存在，并提供删除原远程仓库的选项（高风险操作，需多次确认）。
 - **自动 Git 配置**：在切换或迁移过程中，自动更新本地仓库的 `user.name` 和 `user.email`。
 - **交互式界面**：通过命令行提示引导用户完成操作。
 - **仓库初始化**：在非 Git 仓库目录中使用时，可选择初始化 Git 仓库并配置远程仓库。
+- **仓库可见性选择**：创建仓库时可选择公开或私有仓库。
+- **仓库名称自定义**：支持自定义仓库名称，不限于当前目录名。
 
 ## 前置条件
 
@@ -25,25 +29,7 @@
       gh auth login -h github.com -p ssh
       ```
       注意：不需要为每个 SSH 别名单独登录，工具会自动处理。
-4.  **SSH 密钥配置**：在你的 `~/.ssh/config` 文件中，为每个 GitHub 账号配置独立的 SSH 密钥对和 `Host` 别名。这些别名将用于 `gh-manager` 的配置文件。
-
-    示例 `~/.ssh/config`:
-
-    ```
-    # ~/.ssh/config
-
-    Host github.com-personal
-        HostName github.com
-        User git
-        IdentityFile ~/.ssh/id_rsa_personal
-        IdentitiesOnly yes
-
-    Host github.com-work
-        HostName github.com
-        User git
-        IdentityFile ~/.ssh/id_rsa_work
-        IdentitiesOnly yes
-    ```
+4.  **SSH 密钥配置**：工具可以自动为你创建 SSH 密钥并更新 SSH 配置文件。
 
 ## 安装
 
@@ -78,24 +64,17 @@
 
 首次运行 `gh-manager` 任何命令时，如果配置文件不存在，它将在你的用户主目录 (`~`) 下自动创建一个名为 `.github_account_manager_ts.json` 的模板文件。
 
-**请务必编辑此文件**，填入你所有 GitHub 账号的详细信息：
+你可以使用 `gh-manager account create` 命令交互式地创建和配置新账号，或者直接编辑配置文件：
 
 ```json
 {
   "accounts": {
     "personal": {
-      "githubUsername": "YourPersonalGHUsername", // 你的 GitHub 网站用户名
-      "gitUsername": "Your Personal Name", // Git 提交中显示的姓名
-      "gitEmail": "your.personal.email@example.com", // Git 提交中显示的邮箱
+      "githubUsername": "YourGitHubUsername", // 你的 GitHub 网站用户名
+      "gitUsername": "Your Name", // Git 提交中显示的姓名
+      "gitEmail": "your.email@example.com", // Git 提交中显示的邮箱
       "sshHostAlias": "github.com-personal", // 你的 ~/.ssh/config 中的别名
-      "githubToken": "your_personal_access_token" // 你的 GitHub 个人访问令牌(PAT)
-    },
-    "work": {
-      "githubUsername": "YourWorkGHUsername", // 你的 GitHub 网站用户名
-      "gitUsername": "Your Work Name", // Git 提交中显示的姓名
-      "gitEmail": "your.work.email@example.com", // Git 提交中显示的邮箱
-      "sshHostAlias": "github.com-work", // 你的 ~/.ssh/config 中的别名
-      "githubToken": "your_work_access_token" // 你的 GitHub 个人访问令牌(PAT)
+      "githubToken": "your_github_token" // 你的 GitHub 个人访问令牌(PAT)
     }
   },
   "defaultAccount": "personal" // 默认选择的账号别名
@@ -139,6 +118,34 @@ gh-manager config personal
 ```
 
 ## 使用方法
+
+### 账号管理
+
+管理 GitHub 账号，包括创建、删除、列出和设置默认账号：
+
+```bash
+# 交互式管理账号
+gh-manager account
+
+# 列出所有账号
+gh-manager account --list
+
+# 创建新账号
+gh-manager account --create [账号名称]
+
+# 删除账号
+gh-manager account --delete 账号名称
+
+# 设置默认账号
+gh-manager account --set-default 账号名称
+```
+
+创建账号时，工具会自动：
+
+1. 询问 GitHub 用户名、Git 用户名、邮箱和 SSH 主机别名
+2. 提供创建 SSH 密钥的选项
+3. 自动更新 SSH 配置文件
+4. 显示公钥内容，方便添加到 GitHub 账号
 
 ### 切换账号
 
@@ -208,3 +215,4 @@ gh-manager migrate personal work --delete-source
 - **数据安全**：在执行删除源仓库等高风险操作前，工具会要求多次确认。
 - **权限要求**：确保你已正确配置 SSH 密钥并授权 GitHub CLI。
 - **配置文件**：如果遇到问题，请检查 `~/.github_account_manager_ts.json` 配置是否正确。
+- **SSH 配置**：工具会自动管理 SSH 配置，但在某些情况下可能需要手动调整。

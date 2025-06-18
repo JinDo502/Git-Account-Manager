@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { getAccount, updateAccount } from '../utils/config';
 import { selectAccount } from '../utils/interactive';
+import { generateSshConfigBlock, checkSshHostExists, readSshConfig, addHostToSshConfig, createSshKey, getSshKeyPath, checkSshKeyExists } from '../utils/ssh';
 
 /**
  * 配置账号信息命令处理函数
@@ -27,6 +28,7 @@ export async function configAccount(accountName?: string): Promise<void> {
           { name: '更新账号信息', value: 'update' },
           { name: '查看账号信息', value: 'view' },
           { name: '设置GitHub令牌', value: 'token' },
+          { name: '管理SSH配置', value: 'ssh' },
           { name: '取消', value: 'cancel' },
         ],
       },
@@ -70,6 +72,11 @@ export async function configAccount(accountName?: string): Promise<void> {
       return;
     }
 
+    if (action === 'ssh') {
+      await manageSshConfig(accountName, account);
+      return;
+    }
+
     // 更新账号信息
     const answers = await inquirer.prompt([
       {
@@ -95,6 +102,15 @@ export async function configAccount(accountName?: string): Promise<void> {
         name: 'sshHostAlias',
         message: 'SSH主机别名:',
         default: account.sshHostAlias,
+        validate: (input: string) => {
+          if (!input.trim()) {
+            return 'SSH主机别名不能为空';
+          }
+          if (input !== account.sshHostAlias && checkSshHostExists(input)) {
+            return `SSH主机别名 "${input}" 已存在于~/.ssh/config中`;
+          }
+          return true;
+        },
       },
     ]);
 
@@ -132,8 +148,137 @@ export async function configAccount(accountName?: string): Promise<void> {
     updateAccount(accountName, answers);
 
     console.log(chalk.green(`✅ 账号 "${accountName}" 信息已成功更新`));
+
+    // 如果SSH主机别名已更改，提示用户更新SSH配置
+    if (answers.sshHostAlias !== account.sshHostAlias) {
+      console.log(
+        chalk.yellow(`
+注意: SSH主机别名已从 "${account.sshHostAlias}" 更改为 "${answers.sshHostAlias}"。
+你需要相应地更新SSH配置文件 (~/.ssh/config)。
+      `)
+      );
+
+      // 询问是否要查看SSH配置
+      const { viewSsh } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'viewSsh',
+          message: '是否要查看和管理SSH配置?',
+          default: true,
+        },
+      ]);
+
+      if (viewSsh) {
+        await manageSshConfig(accountName, { ...account, ...answers });
+      }
+    }
   } catch (error) {
     console.error(chalk.red('配置账号信息时出错:'), error);
     process.exit(1);
+  }
+}
+
+/**
+ * 管理SSH配置
+ * @param accountName 账号名称
+ * @param account 账号信息
+ */
+async function manageSshConfig(accountName: string, account: any): Promise<void> {
+  const inquirer = (await import('inquirer')).default;
+
+  // 读取当前SSH配置
+  const sshConfig = readSshConfig();
+  const hostExists = checkSshHostExists(account.sshHostAlias);
+
+  console.log(chalk.blue(`SSH配置管理 - ${accountName} (${account.githubUsername})`));
+
+  // 检查SSH密钥是否存在
+  const keyPath = getSshKeyPath(account.sshHostAlias);
+  const keyExists = checkSshKeyExists(keyPath);
+
+  if (!keyExists) {
+    console.log(chalk.yellow(`⚠️  SSH密钥 "${keyPath}" 不存在`));
+
+    // 询问是否要创建SSH密钥
+    const { createKey } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'createKey',
+        message: '是否要创建新的SSH密钥?',
+        default: true,
+      },
+    ]);
+
+    if (createKey) {
+      const { success, publicKey } = await createSshKey(account);
+
+      if (success) {
+        console.log(chalk.green(`✅ SSH密钥已成功创建`));
+        console.log(
+          chalk.yellow(`
+以下是你的SSH公钥，请将其添加到GitHub账号:
+${publicKey}
+
+添加到GitHub:
+1. 复制上面的公钥内容
+2. 访问 https://github.com/settings/keys
+3. 点击 "New SSH key"
+4. 粘贴公钥内容并保存
+        `)
+        );
+      }
+    }
+  } else {
+    console.log(chalk.green(`✅ SSH密钥已存在: ${keyPath}`));
+  }
+
+  if (hostExists) {
+    console.log(chalk.green(`✅ SSH主机别名 "${account.sshHostAlias}" 已存在于配置文件中`));
+  } else {
+    console.log(chalk.yellow(`⚠️  SSH主机别名 "${account.sshHostAlias}" 不存在于配置文件中`));
+
+    // 生成SSH配置块
+    const sshConfigBlock = generateSshConfigBlock(account);
+    console.log(chalk.blue(`建议的SSH配置块:`));
+    console.log(sshConfigBlock);
+
+    // 询问是否要添加到SSH配置
+    const { addToConfig } = await inquirer.prompt([
+      {
+        type: 'confirm',
+        name: 'addToConfig',
+        message: '是否要将此配置添加到SSH配置文件?',
+        default: true,
+      },
+    ]);
+
+    if (addToConfig) {
+      const success = addHostToSshConfig(sshConfigBlock);
+      if (success) {
+        console.log(chalk.green(`✅ SSH配置已成功更新`));
+      }
+    } else {
+      console.log(
+        chalk.yellow(`
+请手动将以下配置添加到你的SSH配置文件 (~/.ssh/config):
+${sshConfigBlock}
+      `)
+      );
+    }
+  }
+
+  // 显示完整的SSH配置
+  const { viewFullConfig } = await inquirer.prompt([
+    {
+      type: 'confirm',
+      name: 'viewFullConfig',
+      message: '是否要查看完整的SSH配置文件?',
+      default: false,
+    },
+  ]);
+
+  if (viewFullConfig) {
+    console.log(chalk.blue('SSH配置文件内容:'));
+    console.log(sshConfig);
   }
 }

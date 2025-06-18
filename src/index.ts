@@ -5,6 +5,7 @@ import { switchAccount } from './commands/switchAccount';
 import { migrateRepo } from './commands/migrateRepo';
 import { initRepo } from './commands/initRepo';
 import { configAccount } from './commands/configAccount';
+import { accountManager } from './commands/accountManager';
 import { initConfig } from './utils/config';
 import fs from 'fs-extra';
 import path from 'path';
@@ -37,11 +38,22 @@ program
   .description('初始化一个新的Git仓库并关联到GitHub')
   .argument('[account]', '要使用的GitHub账号名称')
   .option('-p, --private', '创建私有仓库')
-  .option('-n, --name <name>', '仓库名称 (默认为当前目录名)')
+  .option('-n, --name <n>', '仓库名称 (默认为当前目录名)')
   .action(initRepo);
 
 // 配置账号命令
 program.command('config').description('配置GitHub账号信息，包括设置个人访问令牌').argument('[account]', '要配置的账号名称').action(configAccount);
+
+// 账号管理命令
+program
+  .command('account')
+  .description('管理GitHub账号')
+  .argument('[account]', '账号名称')
+  .option('-l, --list', '列出所有账号')
+  .option('-c, --create', '创建新账号')
+  .option('-d, --delete', '删除账号')
+  .option('-s, --set-default', '设置默认账号')
+  .action(accountManager);
 
 program.parse(process.argv);
 
