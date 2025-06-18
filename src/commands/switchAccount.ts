@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getAccount } from '../utils/config';
+import { getAccount, updateAccount } from '../utils/config';
 import { getCurrentRepoInfo, setGitConfig, updateRemoteUrl } from '../utils/git';
 import { selectAccount, confirm, input } from '../utils/interactive';
 
@@ -26,6 +26,31 @@ export async function switchAccount(accountName?: string): Promise<void> {
       if (!shouldInit) {
         console.log(chalk.yellow('操作已取消'));
         process.exit(0);
+      }
+
+      // 如果要初始化，检查是否有GitHub令牌，如果没有则提示用户输入
+      if (!account.githubToken) {
+        console.log(chalk.yellow(`账号 "${accountName}" 没有配置GitHub令牌，需要令牌才能自动创建仓库。`));
+
+        const inquirer = (await import('inquirer')).default;
+        const { inputToken } = await inquirer.prompt([
+          {
+            type: 'password',
+            name: 'inputToken',
+            message: '请输入GitHub个人访问令牌 (PAT):',
+            validate: (input: string) => {
+              if (!input.trim()) {
+                return '令牌不能为空';
+              }
+              return true;
+            },
+          },
+        ]);
+
+        // 更新账号信息，添加令牌
+        updateAccount(accountName, { githubToken: inputToken });
+        account.githubToken = inputToken;
+        console.log(chalk.green(`✅ GitHub令牌已成功设置到账号 "${accountName}"`));
       }
     }
 
@@ -109,5 +134,5 @@ async function createInitialCommit(): Promise<void> {
  */
 async function pushToRemote(): Promise<void> {
   const { pushToRemote: pushToRemoteUtil } = await import('../utils/git');
-  await pushToRemoteUtil();
+  await pushToRemoteUtil(false, 'main'); // 使用main作为默认分支
 }

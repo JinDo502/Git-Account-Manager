@@ -87,18 +87,38 @@
       "githubUsername": "YourPersonalGHUsername", // 你的 GitHub 网站用户名
       "gitUsername": "Your Personal Name", // Git 提交中显示的姓名
       "gitEmail": "your.personal.email@example.com", // Git 提交中显示的邮箱
-      "sshHostAlias": "github.com-personal" // 你的 ~/.ssh/config 中的别名
+      "sshHostAlias": "github.com-personal", // 你的 ~/.ssh/config 中的别名
+      "githubToken": "your_personal_access_token" // 你的 GitHub 个人访问令牌(PAT)
     },
     "work": {
       "githubUsername": "YourWorkGHUsername", // 你的 GitHub 网站用户名
       "gitUsername": "Your Work Name", // Git 提交中显示的姓名
       "gitEmail": "your.work.email@example.com", // Git 提交中显示的邮箱
-      "sshHostAlias": "github.com-work" // 你的 ~/.ssh/config 中的别名
+      "sshHostAlias": "github.com-work", // 你的 ~/.ssh/config 中的别名
+      "githubToken": "your_work_access_token" // 你的 GitHub 个人访问令牌(PAT)
     }
   },
   "defaultAccount": "personal" // 默认选择的账号别名
 }
 ```
+
+### 关于 GitHub 个人访问令牌(PAT)
+
+为了自动创建和管理 GitHub 仓库，`gh-manager` 需要使用 GitHub 个人访问令牌(PAT)。请按照以下步骤获取令牌：
+
+1. 登录你的 GitHub 账号
+2. 点击右上角头像 → Settings → Developer settings → Personal access tokens → Tokens (classic)
+3. 点击 "Generate new token" → "Generate new token (classic)"
+4. 为令牌提供一个描述性名称，如 "gh-manager CLI"
+5. 选择以下权限范围：
+   - `repo` (完整控制权限，用于创建和管理仓库)
+   - `delete_repo` (如果需要删除仓库功能)
+6. 点击 "Generate token" 按钮
+7. 复制生成的令牌并保存到配置文件中
+
+**安全提示**：GitHub 个人访问令牌与密码具有相同的权限，请妥善保管。配置文件存储在你的本地计算机上，不会被上传到任何地方。
+
+**注意**：如果你没有在配置文件中设置令牌，在需要使用令牌的操作（如创建仓库）时，工具会提示你输入令牌，并自动保存到配置文件中。
 
 ## 使用方法
 

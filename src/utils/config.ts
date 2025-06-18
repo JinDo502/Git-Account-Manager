@@ -15,12 +15,14 @@ const DEFAULT_CONFIG: Config = {
       gitUsername: 'Your Personal Name',
       gitEmail: 'your.personal.email@example.com',
       sshHostAlias: 'github.com-personal',
+      githubToken: '',
     },
     work: {
       githubUsername: 'YourWorkGHUsername',
       gitUsername: 'Your Work Name',
       gitEmail: 'your.work.email@example.com',
       sshHostAlias: 'github.com-work',
+      githubToken: '',
     },
   },
   defaultAccount: 'personal',
@@ -56,6 +58,35 @@ export function readConfig(): Config {
     return fs.readJsonSync(CONFIG_FILE_PATH);
   } catch (error) {
     console.error(chalk.red('读取配置文件时出错:'), error);
+    process.exit(1);
+  }
+}
+
+/**
+ * 更新账号信息
+ * @param accountName 账号名称
+ * @param accountData 账号数据
+ */
+export function updateAccount(accountName: string, accountData: Partial<GitHubAccount>): void {
+  try {
+    const config = readConfig();
+
+    if (!config.accounts[accountName]) {
+      console.error(chalk.red(`账号 "${accountName}" 不存在。请检查配置文件: ${CONFIG_FILE_PATH}`));
+      process.exit(1);
+    }
+
+    // 更新账号信息
+    config.accounts[accountName] = {
+      ...config.accounts[accountName],
+      ...accountData,
+    };
+
+    // 写入配置文件
+    fs.writeJsonSync(CONFIG_FILE_PATH, config, { spaces: 2 });
+    console.log(chalk.green(`账号 "${accountName}" 信息已更新`));
+  } catch (error) {
+    console.error(chalk.red('更新账号信息时出错:'), error);
     process.exit(1);
   }
 }

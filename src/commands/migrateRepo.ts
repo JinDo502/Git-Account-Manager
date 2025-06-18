@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getAccount } from '../utils/config';
+import { getAccount, updateAccount } from '../utils/config';
 import { getCurrentRepoInfo, setGitConfig, checkRepoExists, updateRemoteUrl, pushToRemote, deleteGitHubRepo } from '../utils/git';
 import { selectAccount, confirm, confirmDangerousAction, input } from '../utils/interactive';
 
@@ -66,6 +66,56 @@ export async function migrateRepo(sourceAccountName?: string, targetAccountName?
     // 获取目标账号信息
     const { account: targetAccount } = getAccount(targetAccountName);
 
+    // 检查目标账号是否有GitHub令牌，如果没有则提示用户输入
+    if (!targetAccount.githubToken) {
+      console.log(chalk.yellow(`目标账号 "${targetAccountName}" 没有配置GitHub令牌，需要令牌才能自动创建仓库。`));
+
+      const inquirer = (await import('inquirer')).default;
+      const { inputToken } = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'inputToken',
+          message: '请输入GitHub个人访问令牌 (PAT):',
+          validate: (input: string) => {
+            if (!input.trim()) {
+              return '令牌不能为空';
+            }
+            return true;
+          },
+        },
+      ]);
+
+      // 更新账号信息，添加令牌
+      updateAccount(targetAccountName, { githubToken: inputToken });
+      targetAccount.githubToken = inputToken;
+      console.log(chalk.green(`✅ GitHub令牌已成功设置到账号 "${targetAccountName}"`));
+    }
+
+    // 如果要删除源仓库，检查源账号是否有GitHub令牌
+    if (options.deleteSource && !sourceAccount.githubToken) {
+      console.log(chalk.yellow(`源账号 "${sourceAccountName}" 没有配置GitHub令牌，需要令牌才能自动删除仓库。`));
+
+      const inquirer = (await import('inquirer')).default;
+      const { inputToken } = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'inputToken',
+          message: '请输入源账号的GitHub个人访问令牌 (PAT):',
+          validate: (input: string) => {
+            if (!input.trim()) {
+              return '令牌不能为空';
+            }
+            return true;
+          },
+        },
+      ]);
+
+      // 更新账号信息，添加令牌
+      updateAccount(sourceAccountName, { githubToken: inputToken });
+      sourceAccount.githubToken = inputToken;
+      console.log(chalk.green(`✅ GitHub令牌已成功设置到源账号 "${sourceAccountName}"`));
+    }
+
     console.log(chalk.blue(`准备将仓库 "${repoInfo.name}" 从账号 "${sourceAccountName}" 迁移到账号 "${targetAccountName}"...`));
 
     // 如果是新初始化的仓库，不需要检查目标仓库是否存在
@@ -99,7 +149,7 @@ export async function migrateRepo(sourceAccountName?: string, targetAccountName?
     }
 
     // 推送所有代码到目标仓库
-    await pushToRemote(true);
+    await pushToRemote(true, 'main');
 
     console.log(chalk.green(`✅ 仓库已成功迁移到账号 "${targetAccountName}" (${targetAccount.githubUsername})`));
 

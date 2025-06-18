@@ -4,6 +4,7 @@ export interface GitHubAccount {
   gitUsername: string; // Git提交显示的用户名
   gitEmail: string; // Git提交显示的邮箱
   sshHostAlias: string; // SSH配置中的Host别名
+  githubToken?: string; // GitHub个人访问令牌(PAT)
 }
 
 // 配置文件接口
